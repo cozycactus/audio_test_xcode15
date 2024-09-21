@@ -19,7 +19,7 @@ void handle_sigint(int signum) {
 }
 
 // Function to list all available output devices
-NSArray<NSDictionary *> *listOutputDevices(void) {
+NSArray<NSDictionary *> *listOutputDevices() {
     NSMutableArray<NSDictionary *> *devices = [NSMutableArray array];
     
     // Define the property address to get all audio devices
@@ -33,7 +33,7 @@ NSArray<NSDictionary *> *listOutputDevices(void) {
     UInt32 dataSize = 0;
     OSStatus status = AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &propertyAddress, 0, NULL, &dataSize);
     if (status != noErr) {
-        NSLog(@"Error getting property data size: %d", status);
+        NSLog(@"Error getting property data size: %d", (int)status);
         return devices;
     }
     
@@ -42,7 +42,7 @@ NSArray<NSDictionary *> *listOutputDevices(void) {
     AudioDeviceID *deviceIDs = malloc(dataSize);
     status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &propertyAddress, 0, NULL, &dataSize, deviceIDs);
     if (status != noErr) {
-        NSLog(@"Error getting device IDs: %d", status);
+        NSLog(@"Error getting device IDs: %d", (int)status);
         free(deviceIDs);
         return devices;
     }
@@ -94,7 +94,7 @@ NSArray<NSDictionary *> *listOutputDevices(void) {
 }
 
 // Function to get the default output device ID
-AudioDeviceID getDefaultOutputDevice(void) {
+AudioDeviceID getDefaultOutputDevice() {
     AudioDeviceID deviceID = kAudioObjectUnknown;
     UInt32 size = sizeof(deviceID);
     AudioObjectPropertyAddress propertyAddress = {
@@ -109,9 +109,34 @@ AudioDeviceID getDefaultOutputDevice(void) {
                                                  &size,
                                                  &deviceID);
     if (status != noErr) {
-        NSLog(@"Error getting default output device: %d", status);
+        NSLog(@"Error getting default output device: %d", (int)status);
     }
     return deviceID;
+}
+
+// Function to get the device's current sample rate
+double getDeviceSampleRate(AudioDeviceID deviceID) {
+    double sampleRate = 0.0;
+    UInt32 size = sizeof(AudioStreamBasicDescription);
+    AudioStreamBasicDescription deviceFormat;
+    AudioObjectPropertyAddress propertyAddress = {
+        kAudioDevicePropertyStreamFormat,
+        kAudioObjectPropertyScopeOutput,
+        0 // Use the appropriate stream (0 for default)
+    };
+    OSStatus status = AudioObjectGetPropertyData(deviceID,
+                                                 &propertyAddress,
+                                                 0,
+                                                 NULL,
+                                                 &size,
+                                                 &deviceFormat);
+    if (status == noErr) {
+        sampleRate = deviceFormat.mSampleRate;
+        NSLog(@"Device Current Sample Rate: %.2f Hz", sampleRate);
+    } else {
+        NSLog(@"Failed to get device stream format: %d", (int)status);
+    }
+    return sampleRate;
 }
 
 // Function to get the current hog PID
@@ -130,7 +155,7 @@ pid_t getCurrentHogPID(AudioDeviceID deviceID) {
                                                  &size,
                                                  &hogPID);
     if (status != noErr) {
-        NSLog(@"Failed to get current hog PID: %d", status);
+        NSLog(@"Failed to get current hog PID: %d", (int)status);
     }
     return hogPID;
 }
@@ -151,7 +176,7 @@ void setExclusiveAccess(AudioDeviceID deviceID) {
                                                  size,
                                                  &hogPID);
     if (status != noErr) {
-        NSLog(@"Failed to set exclusive access: %d", status);
+        NSLog(@"Failed to set exclusive access: %d", (int)status);
     } else {
         NSLog(@"Exclusive access granted.");
     }
@@ -173,14 +198,15 @@ void releaseExclusiveAccess(AudioDeviceID deviceID) {
                                                  size,
                                                  &hogPID);
     if (status != noErr) {
-        NSLog(@"Failed to release exclusive access: %d", status);
+        NSLog(@"Failed to release exclusive access: %d", (int)status);
     } else {
         NSLog(@"Exclusive access released.");
     }
 }
 
-// Function to initialize the audio file
-BOOL initializeAudioFile(const char *filePath) {
+// Function to initialize the audio file and retrieve its sample rate and bitrate
+// Function to initialize the audio file and retrieve its sample rate and bitrate
+BOOL initializeAudioFile(const char *filePath, AudioStreamBasicDescription *fileFormatOut) {
     // Check if the file exists
     NSString *filePathString = [NSString stringWithUTF8String:filePath];
     BOOL fileExists = [[NSFileManager defaultManager] fileExistsAtPath:filePathString];
@@ -202,7 +228,7 @@ BOOL initializeAudioFile(const char *filePath) {
     CFRelease(fileURL);
 
     if (status != noErr) {
-        NSLog(@"Failed to open audio file: %d", status);
+        NSLog(@"Failed to open audio file: %d", (int)status);
         return NO;
     }
 
@@ -214,36 +240,59 @@ BOOL initializeAudioFile(const char *filePath) {
                                      &size,
                                      &fileFormat);
     if (status != noErr) {
-        NSLog(@"Failed to get file data format: %d", status);
+        NSLog(@"Failed to get file data format: %d", (int)status);
         ExtAudioFileDispose(audioFileRef);
         audioFileRef = NULL;
         return NO;
     }
 
-    // Set the client format to match the device's format
-    clientFormat.mSampleRate = 44100.0;
-    clientFormat.mFormatID = kAudioFormatLinearPCM;
-    clientFormat.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
-    clientFormat.mBytesPerPacket = sizeof(Float32) * 2; // Stereo
-    clientFormat.mFramesPerPacket = 1;
-    clientFormat.mBytesPerFrame = sizeof(Float32) * 2; // Stereo
-    clientFormat.mChannelsPerFrame = 2; // Stereo
-    clientFormat.mBitsPerChannel = 32;
-    clientFormat.mReserved = 0;
+    NSLog(@"Audio File Format:");
+    NSLog(@"Sample Rate: %.2f Hz", fileFormat.mSampleRate);
+    NSLog(@"Channels: %u", fileFormat.mChannelsPerFrame);
+    NSLog(@"Bits per Channel: %u", fileFormat.mBitsPerChannel);
+    NSLog(@"Format ID: %u", fileFormat.mFormatID);
+    NSLog(@"Format Flags: %u", fileFormat.mFormatFlags);
+
+    // Store the file's format
+    *fileFormatOut = fileFormat;
+
+    // Set the client format to match the audio file's format exactly
+    clientFormat = fileFormat;
+
+    // **Ensure that mBytesPerFrame and mBytesPerPacket are correctly set**
+    clientFormat.mBytesPerFrame = (clientFormat.mBitsPerChannel / 8) * clientFormat.mChannelsPerFrame;
+    clientFormat.mBytesPerPacket = clientFormat.mBytesPerFrame * clientFormat.mFramesPerPacket;
+
+    // **Adjust format flags if necessary**
+    // For example, ensure interleaved or non-interleaved based on your requirements
+    // Here, we'll assume interleaved
+    clientFormat.mFormatFlags = kAudioFormatFlagIsPacked | kAudioFormatFlagIsSignedInteger;
+
+    // If your audio file is float, set the appropriate flag
+    if (fileFormat.mFormatFlags & kAudioFormatFlagIsFloat) {
+        clientFormat.mFormatFlags = kAudioFormatFlagIsPacked | kAudioFormatFlagIsFloat;
+    }
 
     status = ExtAudioFileSetProperty(audioFileRef,
                                      kExtAudioFileProperty_ClientDataFormat,
                                      sizeof(clientFormat),
                                      &clientFormat);
     if (status != noErr) {
-        NSLog(@"Failed to set client data format: %d", status);
+        NSLog(@"Failed to set client data format: %d", (int)status);
         ExtAudioFileDispose(audioFileRef);
         audioFileRef = NULL;
         return NO;
     }
 
+    NSLog(@"Client Format Set:");
+    NSLog(@"Sample Rate: %.2f Hz", clientFormat.mSampleRate);
+    NSLog(@"Channels: %u", clientFormat.mChannelsPerFrame);
+    NSLog(@"Bits per Channel: %u", clientFormat.mBitsPerChannel);
+    NSLog(@"Format Flags: %u", clientFormat.mFormatFlags);
+
     return YES;
 }
+
 
 // Render callback function
 OSStatus renderCallback(void *inRefCon,
@@ -278,7 +327,7 @@ OSStatus renderCallback(void *inRefCon,
     UInt32 framesToRead = inNumberFrames;
     OSStatus status = ExtAudioFileRead(audioFileRef, &framesToRead, &bufferList);
     if (status != noErr) {
-        NSLog(@"Failed to read audio data: %d", status);
+        NSLog(@"Failed to read audio data: %d", (int)status);
         free(bufferList.mBuffers[0].mData);
         // Fill with silence on error
         for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
@@ -307,8 +356,8 @@ OSStatus renderCallback(void *inRefCon,
     return noErr;
 }
 
-// Function to set up the audio unit with a specific device
-void setupAudioUnit(AudioDeviceID selectedDeviceID) {
+// Function to set up the audio unit with a specific device and format
+BOOL setupAudioUnit(AudioDeviceID selectedDeviceID, const AudioStreamBasicDescription *format) {
     AudioComponentDescription desc = {0};
     desc.componentType = kAudioUnitType_Output;
     desc.componentSubType = kAudioUnitSubType_HALOutput; // HAL Output
@@ -317,13 +366,13 @@ void setupAudioUnit(AudioDeviceID selectedDeviceID) {
     AudioComponent comp = AudioComponentFindNext(NULL, &desc);
     if (comp == NULL) {
         NSLog(@"Failed to find HALOutput AudioComponent.");
-        return;
+        return NO;
     }
 
     OSStatus status = AudioComponentInstanceNew(comp, &audioUnit);
     if (status != noErr) {
-        NSLog(@"Failed to create audio unit instance: %d", status);
-        return;
+        NSLog(@"Failed to create audio unit instance: %d", (int)status);
+        return NO;
     }
 
     // Set the selected device as the output device
@@ -334,8 +383,8 @@ void setupAudioUnit(AudioDeviceID selectedDeviceID) {
                                   &selectedDeviceID,
                                   sizeof(selectedDeviceID));
     if (status != noErr) {
-        NSLog(@"Failed to set current device: %d", status);
-        return;
+        NSLog(@"Failed to set current device: %d", (int)status);
+        return NO;
     }
 
     // Enable output on the audio unit
@@ -347,8 +396,8 @@ void setupAudioUnit(AudioDeviceID selectedDeviceID) {
                                   &enableIO,
                                   sizeof(enableIO));
     if (status != noErr) {
-        NSLog(@"Failed to enable IO on output scope: %d", status);
-        return;
+        NSLog(@"Failed to enable IO on output scope: %d", (int)status);
+        return NO;
     }
 
     // Disable input on the audio unit
@@ -360,34 +409,39 @@ void setupAudioUnit(AudioDeviceID selectedDeviceID) {
                                   &enableIO,
                                   sizeof(enableIO));
     if (status != noErr) {
-        NSLog(@"Failed to disable IO on input scope: %d", status);
-        return;
+        NSLog(@"Failed to disable IO on input scope: %d", (int)status);
+        return NO;
     }
 
-    // Get the device's audio format
-    AudioStreamBasicDescription deviceFormat;
-    UInt32 size = sizeof(deviceFormat);
-    status = AudioUnitGetProperty(audioUnit,
-                                  kAudioUnitProperty_StreamFormat,
-                                  kAudioUnitScope_Output,
-                                  0,
-                                  &deviceFormat,
-                                  &size);
+    // **Set the device's nominal sample rate to match the audio file's sample rate**
+    AudioObjectPropertyAddress sampleRateAddress = {
+        kAudioDevicePropertyNominalSampleRate,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMaster
+    };
+    double sampleRate = format->mSampleRate;
+    status = AudioObjectSetPropertyData(selectedDeviceID,
+                                        &sampleRateAddress,
+                                        0,
+                                        NULL,
+                                        sizeof(sampleRate),
+                                        &sampleRate);
     if (status != noErr) {
-        NSLog(@"Failed to get device stream format: %d", status);
-        return;
+        NSLog(@"Device does not support sample rate: %.2f Hz", sampleRate);
+        return NO;
     }
+    NSLog(@"Device sample rate set to: %.2f Hz", sampleRate);
 
-    // Set the audio unit's input format to match the device's format
+    // **Attempt to set the stream format on the Audio Unit**
     status = AudioUnitSetProperty(audioUnit,
                                   kAudioUnitProperty_StreamFormat,
                                   kAudioUnitScope_Input,
                                   0,
-                                  &deviceFormat,
-                                  size);
+                                  format,
+                                  sizeof(AudioStreamBasicDescription));
     if (status != noErr) {
-        NSLog(@"Failed to set stream format: %d", status);
-        return;
+        NSLog(@"Device does not support the given audio format (Bitrate).");
+        return NO;
     }
 
     // Set the render callback
@@ -401,35 +455,38 @@ void setupAudioUnit(AudioDeviceID selectedDeviceID) {
                                   &callbackStruct,
                                   sizeof(callbackStruct));
     if (status != noErr) {
-        NSLog(@"Failed to set render callback: %d", status);
-        return;
+        NSLog(@"Failed to set render callback: %d", (int)status);
+        return NO;
     }
 
     // Initialize the audio unit
     status = AudioUnitInitialize(audioUnit);
     if (status != noErr) {
-        NSLog(@"Failed to initialize audio unit: %d", status);
-        return;
+        NSLog(@"Failed to initialize audio unit: %d", (int)status);
+        return NO;
     }
 
     NSLog(@"Audio unit setup complete with selected device.");
+    return YES;
 }
 
+
+
 // Function to start the audio unit
-void startAudioUnit(void) {
+void startAudioUnit() {
     OSStatus status = AudioOutputUnitStart(audioUnit);
     if (status != noErr) {
-        NSLog(@"Failed to start audio unit: %d", status);
+        NSLog(@"Failed to start audio unit: %d", (int)status);
         return;
     }
     NSLog(@"Audio unit started.");
 }
 
 // Function to stop the audio unit
-void stopAudioUnit(void) {
+void stopAudioUnit() {
     OSStatus status = AudioOutputUnitStop(audioUnit);
     if (status != noErr) {
-        NSLog(@"Failed to stop audio unit: %d", status);
+        NSLog(@"Failed to stop audio unit: %d", (int)status);
         return;
     }
     AudioUnitUninitialize(audioUnit);
@@ -459,6 +516,13 @@ int main(int argc, const char * argv[]) {
         }
         
         const char *filePath = argv[1];
+        AudioStreamBasicDescription fileFormat;
+        
+        // Initialize the audio file and retrieve its format
+        if (!initializeAudioFile(filePath, &fileFormat)) {
+            NSLog(@"Failed to initialize audio file.");
+            return -1;
+        }
         
         // Handle device selection if provided
         NSString *selectedDeviceName = nil;
@@ -469,7 +533,7 @@ int main(int argc, const char * argv[]) {
             
             // Try interpreting the device argument as an index
             NSInteger deviceIndex = [deviceArg integerValue];
-            if ([deviceArg integerValue] >= 0 && [deviceArg integerValue] < outputDevices.count) {
+            if (deviceIndex >= 0 && deviceIndex < outputDevices.count) {
                 deviceIndex = [deviceArg integerValue];
                 selectedDeviceName = outputDevices[deviceIndex][@"Name"];
             } else {
@@ -500,9 +564,19 @@ int main(int argc, const char * argv[]) {
             }
         }
         
-        // Initialize the audio file
-        if (!initializeAudioFile(filePath)) {
-            NSLog(@"Failed to initialize audio file.");
+        // Retrieve device's sample rate
+        double deviceSampleRate = getDeviceSampleRate(deviceID);
+        if (deviceSampleRate == 0.0) {
+            NSLog(@"Unable to retrieve device sample rate. Exiting.");
+            return -1;
+        }
+        
+        // Set up the audio unit with the selected device and format
+        BOOL setupSuccess = setupAudioUnit(deviceID, &fileFormat);
+        if (!setupSuccess) {
+            NSLog(@"Audio format is not supported by the selected device.");
+            NSLog(@"Audio file's sample rate and/or bitrate is not supported by the selected device.");
+            NSLog(@"Exiting without playback.");
             return -1;
         }
         
@@ -515,13 +589,12 @@ int main(int argc, const char * argv[]) {
             // Already have exclusive access
             NSLog(@"Already have exclusive access.");
         } else {
-            NSLog(@"Cannot obtain exclusive access. Device is hogged by PID: %d", currentHogPID);
+            NSLog(@"Cannot obtain exclusive access. Device is hogged by PID: %d", (int)currentHogPID);
             // Decide how to proceed (e.g., exit or use non-exclusive access)
             return -1;
         }
         
-        // Set up the audio unit with the selected device
-        setupAudioUnit(deviceID);
+        // Start the Audio Unit for playback
         startAudioUnit();
         
         // Set up the signal handler
