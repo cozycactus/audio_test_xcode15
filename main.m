@@ -26,7 +26,7 @@ NSArray<NSDictionary *> *listOutputDevices() {
     AudioObjectPropertyAddress propertyAddress = {
         kAudioHardwarePropertyDevices,
         kAudioObjectPropertyScopeGlobal,
-        kAudioObjectPropertyElementMaster
+        kAudioObjectPropertyElementMain
     };
     
     // Get the size of the data
@@ -57,7 +57,7 @@ NSArray<NSDictionary *> *listOutputDevices() {
         AudioObjectPropertyAddress nameProperty = {
             kAudioObjectPropertyName,
             kAudioObjectPropertyScopeGlobal,
-            kAudioObjectPropertyElementMaster
+            kAudioObjectPropertyElementMain
         };
         status = AudioObjectGetPropertyData(deviceID, &nameProperty, 0, NULL, &nameSize, &deviceNameCF);
         NSString *deviceName = status == noErr ? (__bridge NSString *)(deviceNameCF) : @"Unknown";
@@ -68,7 +68,7 @@ NSArray<NSDictionary *> *listOutputDevices() {
         AudioObjectPropertyAddress uidProperty = {
             kAudioDevicePropertyDeviceUID,
             kAudioObjectPropertyScopeGlobal,
-            kAudioObjectPropertyElementMaster
+            kAudioObjectPropertyElementMain
         };
         status = AudioObjectGetPropertyData(deviceID, &uidProperty, 0, NULL, &uidSize, &deviceUIDCF);
         NSString *deviceUID = status == noErr ? (__bridge NSString *)(deviceUIDCF) : @"Unknown";
@@ -100,7 +100,7 @@ AudioDeviceID getDefaultOutputDevice() {
     AudioObjectPropertyAddress propertyAddress = {
         kAudioHardwarePropertyDefaultOutputDevice,
         kAudioObjectPropertyScopeGlobal,
-        kAudioObjectPropertyElementMaster
+        kAudioObjectPropertyElementMain
     };
     OSStatus status = AudioObjectGetPropertyData(kAudioObjectSystemObject,
                                                  &propertyAddress,
@@ -146,7 +146,7 @@ pid_t getCurrentHogPID(AudioDeviceID deviceID) {
     AudioObjectPropertyAddress propertyAddress = {
         kAudioDevicePropertyHogMode,
         kAudioObjectPropertyScopeGlobal,
-        kAudioObjectPropertyElementMaster
+        kAudioObjectPropertyElementMain
     };
     OSStatus status = AudioObjectGetPropertyData(deviceID,
                                                  &propertyAddress,
@@ -167,7 +167,7 @@ void setExclusiveAccess(AudioDeviceID deviceID) {
     AudioObjectPropertyAddress propertyAddress = {
         kAudioDevicePropertyHogMode,
         kAudioObjectPropertyScopeGlobal,
-        kAudioObjectPropertyElementMaster
+        kAudioObjectPropertyElementMain
     };
     OSStatus status = AudioObjectSetPropertyData(deviceID,
                                                  &propertyAddress,
@@ -189,7 +189,7 @@ void releaseExclusiveAccess(AudioDeviceID deviceID) {
     AudioObjectPropertyAddress propertyAddress = {
         kAudioDevicePropertyHogMode,
         kAudioObjectPropertyScopeGlobal,
-        kAudioObjectPropertyElementMaster
+        kAudioObjectPropertyElementMain
     };
     OSStatus status = AudioObjectSetPropertyData(deviceID,
                                                  &propertyAddress,
@@ -417,7 +417,7 @@ BOOL setupAudioUnit(AudioDeviceID selectedDeviceID, const AudioStreamBasicDescri
     AudioObjectPropertyAddress sampleRateAddress = {
         kAudioDevicePropertyNominalSampleRate,
         kAudioObjectPropertyScopeGlobal,
-        kAudioObjectPropertyElementMaster
+        kAudioObjectPropertyElementMain
     };
     double sampleRate = format->mSampleRate;
     status = AudioObjectSetPropertyData(selectedDeviceID,
@@ -624,3 +624,4 @@ int main(int argc, const char * argv[]) {
         return 0;
     }
 }
+  

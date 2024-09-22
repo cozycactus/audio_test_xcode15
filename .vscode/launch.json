@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug with LLDB",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/audio_test", // Path to your executable
+            "args": [
+                "/path/to/your_audio_file.wav", // Replace with your audio file path
+                "0" // Replace with your desired output device index or name
+            ],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Build Objective-C", // Ensure this matches your task label
+
+            "sourceLanguages": ["objective-c"],
+
+
+        }
+    ]
+}
